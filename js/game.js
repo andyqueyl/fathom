@@ -798,8 +798,6 @@
     const p = PROMPTS.get(r.id);
     const gained = POINTS[r.tier];
     const before = rec.score - gained;
-    const common = p.a.filter(e => e[1] === 1).map(e => e[0]);
-    const deep = shuffle(p.a.filter(e => e[1] === 5), mulberry32(r.id.length * 31 + p.a.length)).slice(0, 4).map(e => e[0]);
     const m = rec.score * METRES_PER_POINT;
     const passed = MARKS.filter(([d]) => d <= m && d > before * METRES_PER_POINT);
     const last = rec.rounds.length >= prompts.length;
@@ -823,10 +821,6 @@
               ${tried.length ? `<span class="typed">tried ${tried.map(t => `"${esc(t)}"`).join(", ")}</span>` : ""}</div>
               <div class="right"><span class="gain">+0</span></div></div>`}
         ${passed.length ? `<p class="passed">${passed.map(([d, n]) => `<span>↓ ${fmtM(d)} · ${esc(n)}</span>`).join("")}</p>` : ""}
-        <dl class="lists">
-          <dt>Everyone says</dt><dd>${common.map(c => `<span class="chip t1">${esc(c)}</span>`).join("")}</dd>
-          ${deep.length ? `<dt>Deep cuts</dt><dd>${deep.map(c => `<span class="chip t5">${esc(c)}</span>`).join("")}</dd>` : ""}
-        </dl>
         <details class="all">
           <summary>See all ${p.a.length} answers</summary>
           ${byTier.filter(([, list]) => list.length).map(([t, list]) => `<div class="all-tier"><h4 class="t${t}">${TIER[t]} · ${POINTS[t]}</h4>
@@ -1293,7 +1287,6 @@
         <div class="round-top"><span class="pill">Lobby ${esc(S.code)}</span><span class="pill">${r + 1} / ${ROUNDS}</span></div>
         ${p ? `<h2 class="prompt small">${esc(p.q)}</h2>` : ""}
         <ol class="answers-round">${rows}</ol>
-        ${p ? `<dl class="lists"><dt>Everyone says</dt><dd>${p.a.filter(e => e[1] === 1).map(e => `<span class="chip t1">${esc(e[0])}</span>`).join("")}</dd></dl>` : ""}
         <h3>${done ? "Final standings" : "Standings"}</h3>
         <ol class="players ${done ? "final" : ""}">${board.map((pl, k) => `<li class="${pl.id === L.me ? "me" : ""} ${done ? medal(k) : ""}">
           <span class="rk">${k + 1}</span><span class="nm">${esc(pl.name)}</span>
