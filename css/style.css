@@ -313,9 +313,9 @@ h1.title {
 .prog span { display: block; height: 100%; background: var(--accent); }
 .row .r { display: inline-flex; align-items: center; gap: 10px; justify-content: flex-end; }
 .row:not(.played) .r { color: var(--ink-3); }
-.spark { display: flex; align-items: flex-end; gap: 6px; height: 110px; padding: 10px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; }
-.spark span { position: relative; flex: 1; max-width: 36px; background: linear-gradient(var(--t5), var(--accent)); border-radius: 3px 3px 0 0; }
-.spark em { position: absolute; top: -16px; left: 0; right: 0; text-align: center; font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+.spark-chart { display: flex; align-items: flex-end; gap: 6px; height: 110px; padding: 10px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; }
+.spark-chart span { position: relative; flex: 1; max-width: 36px; background: linear-gradient(var(--t5), var(--accent)); border-radius: 3px 3px 0 0; }
+.spark-chart em { position: absolute; top: -16px; left: 0; right: 0; text-align: center; font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
 .flags { list-style: none; padding: 0; margin: 10px 0; font-size: 13.5px; }
 .flags li { padding: 6px 0; border-bottom: 1px solid var(--panel-line); color: var(--ink-2); }
 

@@ -652,7 +652,7 @@
           <div class="tile"><span class="v">${streak()}</span><span class="l">day streak</span></div>
         </div>
         ${recent.length ? `<h3>Recent dives</h3>
-        <div class="spark">${recent.map(([n, r]) => `<span title="Dive #${n}: ${r.score} pts" style="height:${Math.max(3, r.score / 7)}%"><em>${r.score}</em></span>`).join("")}</div>` : ""}
+        <div class="spark-chart">${recent.map(([n, r]) => `<span title="Dive #${n}: ${r.score} pts" style="height:${Math.max(3, r.score / 7)}%"><em>${r.score}</em></span>`).join("")}</div>` : ""}
         <h3>Your answers by rarity</h3>
         <div class="bars">
           ${[5, 4, 3, 2, 1, 0].map(t => `<div class="bar"><span class="bl t${t}">${TIER[t]}</span>
