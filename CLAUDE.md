@@ -4,7 +4,8 @@
 
 - **Owner:** Andy. He plays Krillion (krillion.io) daily and wanted a free version because the original charges for extras. Built 2026-10-15.
 - **It's a clone of the mechanics, not the brand.** Keep the name Fathom, our own copy and our own depth facts. Never copy Krillion's text, logo or prompts.
-- **Static and offline.** No build step, no server, no fetch (packs are `<script>` files so `file://` works). Keep it that way unless Andy asks to host it.
+- **Live site:** https://andyqueyl.github.io/fathom/ (GitHub Pages, `main` branch, repo root). **Repo:** https://github.com/andyqueyl/fathom (public, so Pages works on a free account).
+- **Static and offline.** No build step, no server, no fetch (packs are `<script>` files so `file://` works too). Pushing to `main` redeploys the site.
 - **Honesty about rarity.** Tiers are estimates. Never present them as player data in the UI or the README.
 
 ## Gameplay rules (Andy's spec, mirroring the original)
