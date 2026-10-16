@@ -17,7 +17,7 @@ Open `index.html` in a browser. Double-clicking it works and needs no server and
 - **Play with friends:** host a lobby, send the 4-letter code or invite link, and up to 8 people play the same 7 prompts at the same time. Everyone sees who has answered, then all the answers side by side, then live standings.
 - **Stats:** dives played, average, deepest, streak, recent scores, how rare your answers are, and your flagged answers. Stats live in this browser only (localStorage).
 
-During a round you can **Pass**, see the guesses that got rejected, and **flag** a rejected answer you think is right. Flags collect on the Stats page with a Copy button, so you can send them over to get added. After each round you see the common answers, some deep cuts, and the full answer list by rarity.
+During a round you can **Pass**, see the guesses that got rejected, and **flag** a rejected answer you think is right. Flags collect on the Stats page with a Copy button, so you can send them over to get added. After each round you see your answer's rarity, and you can open the full answer list if you want it.
 
 Typing an answer that isn't on the list doesn't cost you anything. You get "not on the list" and can try again until the clock runs out. Case, accents, punctuation, apostrophes, a leading "the" and plural "s" are ignored, and numbers can be typed any way ("Toy Story 2" = "Toy Story II" = "Toy Story Two", "Henry the Eighth" = "Henry VIII"). Typos are forgiven only a little: one slip in a word of 6+ letters, two in 10+, or two swapped letters ("balck"). Each word has to keep its first letter, and numbers have to match ("Shrek 5" is not "Shrek 2"). That's strict on purpose: a rejected typo can be retyped, but a wrong answer that sneaks through can't be undone.
 
