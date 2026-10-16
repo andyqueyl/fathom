@@ -151,10 +151,87 @@
     return z;
   }
 
+  // ---------- motion ----------
+  const calm = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fx = {
+    // The old screen zooms past you while the new one rises in.
+    ghost() {
+      const old = app.querySelector(".screen");
+      if (!old || calm()) return;
+      const r = old.getBoundingClientRect();
+      old.querySelectorAll("[id]").forEach(e => e.removeAttribute("id"));
+      old.classList.add("ghost-out");
+      Object.assign(old.style, { position: "fixed", top: r.top + "px", left: r.left + "px", width: r.width + "px", margin: 0 });
+      document.body.appendChild(old);
+      setTimeout(() => old.remove(), 450);
+    },
+    words(el) {
+      el.innerHTML = el.textContent.split(" ").map((w, i) => `<span class="w" style="--i:${i}">${esc(w)}</span>`).join(" ");
+    },
+    letters(el) {
+      el.innerHTML = [...el.textContent].map((c, i) => `<span class="l" style="--i:${i}">${esc(c)}</span>`).join("");
+    },
+    // "+75" flies from the verdict up into the score counter.
+    fly(from, text, tier) {
+      const to = $("#hud-score");
+      if (!from || !to || calm()) return;
+      const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+      const n = document.createElement("div");
+      n.className = `flyer t${tier}`;
+      n.textContent = text;
+      n.style.left = a.left + "px"; n.style.top = a.top + "px";
+      document.body.appendChild(n);
+      n.animate([
+        { transform: "translate(0,0) scale(1)", opacity: 1 },
+        { transform: `translate(${(b.left - a.left) * 0.5}px, ${(b.top - a.top) * 0.5 - 40}px) scale(1.6)`, opacity: 1, offset: 0.45 },
+        { transform: `translate(${b.left - a.left}px, ${b.top - a.top}px) scale(0.5)`, opacity: 0.2 },
+      ], { duration: 950, easing: "cubic-bezier(.5,0,.3,1)" }).onfinish = () => {
+        n.remove();
+        to.classList.remove("bump"); void to.offsetWidth; to.classList.add("bump");
+      };
+    },
+    // Rare answers burst into glowing bubbles.
+    burst(el, tier) {
+      if (!el || tier < 4 || calm()) return;
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const count = tier === 5 ? 26 : 14;
+      for (let k = 0; k < count; k++) {
+        const d = document.createElement("i");
+        d.className = `spark t${tier}`;
+        const size = 4 + Math.random() * 9;
+        Object.assign(d.style, { left: cx + "px", top: cy + "px", width: size + "px", height: size + "px" });
+        document.body.appendChild(d);
+        const ang = Math.random() * Math.PI * 2, dist = 80 + Math.random() * (tier === 5 ? 260 : 160);
+        d.animate([
+          { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+          { transform: `translate(calc(-50% + ${Math.cos(ang) * dist}px), calc(-50% + ${Math.sin(ang) * dist}px)) scale(0.2)`, opacity: 0 },
+        ], { duration: 700 + Math.random() * 600, easing: "cubic-bezier(.1,.7,.3,1)" }).onfinish = () => d.remove();
+      }
+      if (tier === 5) {
+        const f = document.createElement("div");
+        f.className = "flash";
+        document.body.appendChild(f);
+        setTimeout(() => f.remove(), 900);
+        document.body.classList.remove("quake"); void document.body.offsetWidth; document.body.classList.add("quake");
+      }
+    },
+    // Crossing into a new zone gets a title card.
+    zone(name, note) {
+      if (calm()) return;
+      const z = document.createElement("div");
+      z.className = "zone-banner";
+      z.innerHTML = `<b>${esc(name)}</b><small>${esc(note)}</small>`;
+      document.body.appendChild(z);
+      setTimeout(() => z.remove(), 2600);
+    },
+  };
+
   // Every screen starts by tearing down the last one's timers and listeners.
   let cleanups = [];
   let leaveGuard = null; // returns true if it handled the click itself
   function screen() {
+    fx.ghost();
     cleanups.forEach(f => f());
     cleanups = [];
     leaveGuard = null;
@@ -278,6 +355,7 @@
         </details>
         <p class="count">${IDS.length} prompts · ${ANSWERS.toLocaleString()} answers · ${PACKS.length} packs</p>
       </section>`;
+    fx.letters($(".title"));
     state.intro = true;
     save();
     $("#go-daily").onclick = () => done ? results(rec, dailyMeta(n)) : startDaily(n);
@@ -448,6 +526,7 @@
           <span class="hint">Enter to dive · rejected guesses are free</span>
         </div>
       </section>`;
+    fx.words($(".round .prompt"));
     const input = $("#guess");
     input.focus();
     const fb = $("#feedback");
@@ -507,12 +586,13 @@
       };
     }
 
-    const clockFill = $("#clock-fill"), clockN = $("#clock-n"), clock = $(".clock");
+    const clockFill = $("#clock-fill"), clockN = $("#clock-n"), clock = $(".clock"), promptEl = $(".round .prompt");
     const tick = now => {
       const left = Math.max(0, SECONDS - (now - start) / 1000);
       clockFill.style.transform = `scaleX(${left / SECONDS})`;
       clockN.textContent = Math.ceil(left);
       clock.classList.toggle("low", left <= 5);
+      promptEl.classList.toggle("tense", left <= 5);
       if (left <= 0) return end(input.value.trim(), -1, "time");
       raf = requestAnimationFrame(tick);
     };
@@ -568,6 +648,17 @@
     const t = setTimeout(() => setDepth(rec.score), 60);
     cleanups.push(() => clearTimeout(t));
     if (gained && $("#gain")) countUp($("#gain"), 0, gained, String);
+    const verdict = $(".verdict");
+    const fxT = setTimeout(() => {
+      if (gained) fx.fly($("#gain"), "+" + gained, r.tier);
+      fx.burst(verdict, r.tier);
+    }, 380);
+    cleanups.push(() => clearTimeout(fxT));
+    const crossed = passed.filter(([, n]) => / · /.test(n) && /ZONE|trench/.test(n)).pop();
+    if (crossed) {
+      const zt = setTimeout(() => fx.zone(crossed[1].split(" · ")[0], crossed[1].split(" · ")[1]), 900);
+      cleanups.push(() => clearTimeout(zt));
+    }
     countUp($("#hud-depth"), before * METRES_PER_POINT, m, fmtM);
 
     const next = () => { if (last) finish(prompts, meta, rec); else round(prompts, meta, rec); };
@@ -611,7 +702,7 @@
           ${rec.rounds.map(r => {
             const p = PROMPTS.get(r.id);
             const ans = r.hit >= 0 && p ? p.a[r.hit][0] : "—";
-            return `<li><span class="sq t${r.tier}"></span><span class="q">${esc(p ? p.q : r.id)}</span>
+            return `<li style="--i:${rec.rounds.indexOf(r)}"><span class="sq t${r.tier}"></span><span class="q">${esc(p ? p.q : r.id)}</span>
               <span class="a">${esc(ans)}</span><span class="pts t${r.tier}">${POINTS[r.tier]}</span></li>`;
           }).join("")}
         </ol>
@@ -645,6 +736,13 @@
   }
 
   // ---------- boot ----------
+  if (!calm()) {
+    window.addEventListener("pointermove", e => {
+      const root = document.documentElement.style;
+      root.setProperty("--mx", (e.clientX / innerWidth - 0.5).toFixed(3));
+      root.setProperty("--my", (e.clientY / innerHeight - 0.5).toFixed(3));
+    }, { passive: true });
+  }
   buildGauge();
   bubbles();
   $("#home-btn").onclick = () => { if (leaveGuard && leaveGuard()) return; home(); };
