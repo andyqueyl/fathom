@@ -216,6 +216,81 @@
         document.body.classList.remove("quake"); void document.body.offsetWidth; document.body.classList.add("quake");
       }
     },
+    // After a correct guess: the word lifts out of the box and floats (common)
+    // or sinks (rare), trailing bubbles, before the reveal. Resolves when done
+    // or when the player clicks / presses a key to skip.
+    plunge(fromEl, word, tier, gained) {
+      return new Promise(resolve => {
+        if (calm() || !fromEl) return resolve();
+        const ov = document.createElement("div");
+        ov.className = `plunge t${tier}`;
+        ov.innerHTML = `<div class="pl-word">${esc(word)}</div><div class="pl-ring"></div>
+          <div class="pl-depth"><span>${tier <= 1 ? "floats" : "↓ 0 m"}</span></div>
+          <div class="pl-stamp">${TIER[tier]}<small>+${gained}</small></div>`;
+        document.body.appendChild(ov);
+        const w = ov.querySelector(".pl-word"), depthEl = ov.querySelector(".pl-depth span");
+        const a = fromEl.getBoundingClientRect(), b = w.getBoundingClientRect();
+        // Start exactly over the input, then fly to the middle of the screen.
+        const dx = a.left + 16 - b.left, dy = a.top + a.height / 2 - (b.top + b.height / 2);
+        const sink = [0, -60, 70, 160, 240, 320][tier];       // floats up for tier 1, sinks deeper for rarer
+        const dur = [0, 1500, 1500, 1650, 1700, 1750][tier];
+        const anims = [];
+        anims.push(w.animate([
+          { transform: `translate(${dx}px, ${dy}px) scale(.55)`, opacity: .6, offset: 0 },
+          { transform: "translate(0, 0) scale(1.15)", opacity: 1, offset: .28 },
+          { transform: "translate(0, 0) scale(1)", opacity: 1, offset: .38 },
+          { transform: `translate(0, ${sink}px) scale(${tier <= 1 ? 1.05 : 1 - tier * 0.07})`, opacity: tier >= 4 ? .15 : .9, offset: .85 },
+          { transform: `translate(0, ${sink * 1.1}px) scale(${tier <= 1 ? 1.05 : .6})`, opacity: 0, offset: 1 },
+        ], { duration: dur, easing: "cubic-bezier(.45,0,.25,1)", fill: "forwards" }));
+        ov.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .85 }, { opacity: 0 }], { duration: dur + 350, fill: "forwards" });
+        // Bubbles stream off the word while it moves.
+        const bubbleT = setInterval(() => {
+          const r = w.getBoundingClientRect();
+          const bub = document.createElement("i");
+          bub.className = "pl-bubble";
+          const size = 3 + Math.random() * (tier >= 4 ? 10 : 6);
+          Object.assign(bub.style, { left: r.left + Math.random() * r.width + "px", top: r.top + r.height / 2 + "px", width: size + "px", height: size + "px" });
+          ov.appendChild(bub);
+          bub.animate([{ transform: "translateY(0)", opacity: .9 }, { transform: `translate(${(Math.random() - .5) * 40}px, ${-120 - Math.random() * 160}px)`, opacity: 0 }],
+            { duration: 900 + Math.random() * 700, easing: "ease-out" }).onfinish = () => bub.remove();
+        }, tier >= 4 ? 30 : 70);
+        // Depth counter rolls for anything that sinks.
+        if (tier > 1) {
+          const t0 = performance.now() + dur * .38, total = gained * METRES_PER_POINT;
+          const roll = now => {
+            const k = Math.max(0, Math.min(1, (now - t0) / (dur * .5)));
+            depthEl.textContent = "↓ " + fmtM(Math.round(total * (1 - Math.pow(1 - k, 3))));
+            if (k < 1 && ov.isConnected) requestAnimationFrame(roll);
+          };
+          requestAnimationFrame(roll);
+        }
+        if (tier >= 4) {
+          ov.querySelector(".pl-ring").animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: .9 }, { transform: "translate(-50%,-50%) scale(4)", opacity: 0 }],
+            { duration: 900, delay: dur * .45, easing: "cubic-bezier(.1,.7,.3,1)", fill: "both" });
+        }
+        ov.querySelector(".pl-stamp").animate([
+          { transform: "translate(-50%,-50%) scale(2.2)", opacity: 0 },
+          { transform: "translate(-50%,-50%) scale(.95)", opacity: 1, offset: .6 },
+          { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+        ], { duration: 450, delay: dur * .55, easing: "cubic-bezier(.2,1.4,.4,1)", fill: "both" });
+        let finished = false;
+        const done = () => {
+          if (finished) return;
+          finished = true;
+          clearInterval(bubbleT);
+          document.removeEventListener("keydown", skip, true);
+          ov.remove();
+          resolve();
+        };
+        const skip = e => { if (e.type === "keydown") { e.preventDefault(); e.stopPropagation(); } done(); };
+        setTimeout(() => {
+          document.addEventListener("keydown", skip, true);
+          ov.addEventListener("pointerdown", skip);
+        }, 200);
+        setTimeout(done, dur + 350);
+      });
+    },
+
     // Crossing into a new zone gets a title card.
     zone(name, note) {
       if (calm()) return;
@@ -544,7 +619,12 @@
       rec.rounds.push(why ? { id: p.id, guess, hit, tier, why } : { id: p.id, guess, hit, tier });
       rec.score += POINTS[tier];
       save();
-      reveal(prompts, meta, rec, tried);
+      if (hit < 0) return reveal(prompts, meta, rec, tried);
+      input.blur();
+      $(".answer").classList.add("launched");
+      fx.plunge(input, p.a[hit][0], tier, POINTS[tier]).then(() => {
+        if (app.querySelector(".round") && rec.rounds.length && rec.rounds[rec.rounds.length - 1].id === p.id) reveal(prompts, meta, rec, tried);
+      });
     };
 
     $(".answer").onsubmit = e => {
@@ -1057,6 +1137,9 @@
           input.classList.remove("shake"); void input.offsetWidth; input.classList.add("shake");
           return;
         }
+        const hit = FathomMatch.match(p, g, idx(p));
+        input.blur();
+        fx.plunge(input, p.a[hit][0], p.a[hit][1], POINTS[p.a[hit][1]]);
         lock(g, "");
       };
     }
