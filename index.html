@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fathom</title>
+<meta name="description" content="A free daily dive: seven prompts, rare answers sink deeper.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23062033'/><path d='M16 6v16m-6-6 6 6 6-6' stroke='%235ee6d0' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="water" aria-hidden="true">
+  <div class="caustics"></div>
+  <div class="rays"></div>
+  <div id="bubbles"></div>
+  <div id="snow"></div>
+  <div id="life">
+    <!-- Sea life by depth (metres). JS shows each one between data-from and data-to. -->
+    <svg class="creature school" data-from="0" data-to="450" viewBox="0 0 220 90">
+      <g fill="currentColor">
+        <path d="M20 30c12-9 30-9 40 0-10 9-28 9-40 0zm40 0l12-8v16z"/>
+        <path d="M70 55c12-9 30-9 40 0-10 9-28 9-40 0zm40 0l12-8v16z"/>
+        <path d="M110 20c12-9 30-9 40 0-10 9-28 9-40 0zm40 0l12-8v16z"/>
+        <path d="M140 62c10-7 24-7 32 0-8 7-22 7-32 0zm32 0l10-6v12z"/>
+        <path d="M40 75c10-7 24-7 32 0-8 7-22 7-32 0zm32 0l10-6v12z"/>
+      </g>
+    </svg>
+    <svg class="creature jelly" data-from="150" data-to="1600" viewBox="0 0 80 140">
+      <path d="M8 46C8 20 24 6 40 6s32 14 32 40c-8-4-12 4-16 0s-8 4-16 0-8 4-16 0-12-4-16 0z" fill="currentColor"/>
+      <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path class="tent" d="M18 48c-4 20 6 34 0 60"/><path class="tent" d="M32 50c4 24-6 40 2 74"/>
+        <path class="tent" d="M48 50c-4 24 6 40-2 70"/><path class="tent" d="M62 48c4 20-6 34 0 56"/>
+      </g>
+    </svg>
+    <svg class="creature angler" data-from="1000" data-to="4200" viewBox="0 0 200 130">
+      <path d="M90 22c-8-14 4-20 22-16" fill="none" stroke="currentColor" stroke-width="2.5"/>
+      <circle class="lure" cx="114" cy="6" r="5"/>
+      <path d="M30 70c0-30 30-48 66-46 34 2 60 22 62 46-10 0-20 6-26 12l-10-10-8 12-10-12-8 12-10-12-8 12-10-12c-12 12-30 14-38-2zM30 70l-26-22v48z" fill="currentColor"/>
+      <circle cx="120" cy="52" r="5" fill="#000" opacity=".6"/>
+    </svg>
+    <svg class="creature wreck" data-from="3500" data-to="4300" viewBox="0 0 300 90">
+      <path d="M10 60h250l30-18-8 34H24z" fill="currentColor"/>
+      <path d="M70 60V40h120v20M90 40V20h14v20M130 40V14h14v26M170 40V22h14v18" fill="none" stroke="currentColor" stroke-width="5"/>
+    </svg>
+    <svg class="creature snail" data-from="4000" data-to="7001" viewBox="0 0 200 80">
+      <path d="M20 44c0-18 22-30 54-30 40 0 80 14 116 30-36 16-76 26-116 26-32 0-54-10-54-26z" fill="currentColor"/>
+      <circle cx="44" cy="38" r="3" fill="#000" opacity=".5"/>
+    </svg>
+  </div>
+</div>
+
+<aside id="gauge" aria-label="Depth gauge">
+  <div class="gauge-track">
+    <div id="gauge-fill"></div>
+    <div id="gauge-diver" title="You"></div>
+  </div>
+  <ol id="gauge-zones"></ol>
+</aside>
+
+<header id="hud">
+  <button id="home-btn" class="brand" type="button" aria-label="Back to the start">FATHOM</button>
+  <div class="hud-stats">
+    <div><span class="lbl">Depth</span><span id="hud-depth" class="val">0 m</span></div>
+    <div><span class="lbl">Score</span><span id="hud-score" class="val">0</span></div>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<script src="js/match.js"></script>
+<script src="data/pack-geo.js"></script>
+<script src="data/pack-sci.js"></script>
+<script src="data/pack-pop.js"></script>
+<script src="data/pack-life.js"></script>
+<script src="data/pack-mix.js"></script>
+<script src="data/pack-music.js"></script>
+<script src="data/pack-screen.js"></script>
+<script src="data/pack-games.js"></script>
+<script src="data/pack-brands.js"></script>
+<script src="data/pack-word.js"></script>
+<script src="data/pack-people.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
