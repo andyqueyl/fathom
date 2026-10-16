@@ -340,6 +340,7 @@
           <button type="button" data-go="packs"><b>Packs</b><span>pick a theme</span></button>
           <button type="button" data-go="unlimited"><b>Unlimited</b><span>play forever</span></button>
           <button type="button" data-go="stats"><b>Stats</b><span>your record</span></button>
+          <button type="button" data-go="friends" class="wide"><b>Play with friends</b><span>a live lobby, same prompts for everyone</span></button>
         </nav>
 
         <details class="rules" ${firstVisit ? "open" : ""}>
@@ -359,7 +360,7 @@
     state.intro = true;
     save();
     $("#go-daily").onclick = () => done ? results(rec, dailyMeta(n)) : startDaily(n);
-    app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => ({ archive, packs, unlimited, stats })[b.dataset.go]());
+    app.querySelectorAll("[data-go]").forEach(b => b.onclick = () => ({ archive, packs, unlimited, stats, friends })[b.dataset.go]());
     if (done) every(30000, () => { const c = $("#countdown"); if (c) c.textContent = untilMidnight(); if (todayNumber() !== n) home(); });
   }
 
@@ -735,6 +736,387 @@
     else fallback();
   }
 
+  // ---------- friends lobby (peer to peer) ----------
+  // The host's browser is the referee. Everyone connects to it through PeerJS (the free
+  // public broker only introduces the browsers), it picks the 7 prompts, runs the clock
+  // and sends the whole room state to everyone after every change.
+  const LOBBY_MAX = 8;
+  const LOBBY_PREFIX = "fathom-room-";
+  const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }] };
+  let L = null; // the live lobby session
+
+  function myId() {
+    try {
+      let id = sessionStorage.getItem("fathom:me");
+      if (!id) { id = Math.random().toString(36).slice(2, 10); sessionStorage.setItem("fathom:me", id); }
+      return id;
+    } catch (e) { return Math.random().toString(36).slice(2, 10); }
+  }
+  function myName() { try { return localStorage.getItem("fathom:name") || ""; } catch (e) { return ""; } }
+  function saveName(n) { try { localStorage.setItem("fathom:name", n); } catch (e) { /* fine */ } }
+  const roomCode = () => Array.from({ length: 4 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.floor(Math.random() * 24)]).join("");
+  const inviteLink = code => location.origin + location.pathname + "?room=" + code;
+  const peerReady = () => typeof window.Peer === "function";
+
+  function lobbyLeave() {
+    if (!L) return;
+    const s = L;
+    L = null;
+    clearTimeout(s.timer);
+    try { s.peer && s.peer.destroy(); } catch (e) { /* already gone */ }
+  }
+
+  function friends(prefill) {
+    screen();
+    setDepth(0);
+    lobbyLeave();
+    const name = myName();
+    app.innerHTML = `
+      <section class="screen list lobby">
+        <h2>Play with friends</h2>
+        <p class="sub">Up to ${LOBBY_MAX} players. Everyone gets the same 7 prompts at the same time and sees the scores live.</p>
+        ${peerReady() ? "" : `<p class="warn">The multiplayer library didn't load. Check your internet connection and reload.</p>`}
+        <label class="field"><span>Your name</span><input id="nm" maxlength="16" placeholder="e.g. Andy" value="${esc(name)}" autocomplete="off"></label>
+        <div class="lobby-choice">
+          <div class="lobby-card">
+            <h3>Host a lobby</h3>
+            <p class="sub">You get a code and a link to send. Keep this tab open while you play.</p>
+            <button type="button" class="primary small" id="host">Create lobby</button>
+          </div>
+          <div class="lobby-card">
+            <h3>Join a lobby</h3>
+            <input id="code" class="code-in" maxlength="4" placeholder="CODE" value="${esc(prefill || "")}" autocomplete="off" autocapitalize="characters">
+            <button type="button" class="primary small" id="join">Join</button>
+          </div>
+        </div>
+        <p class="feedback" id="feedback"></p>
+        <button type="button" class="ghost back">← Back</button>
+      </section>`;
+    const fb = $("#feedback");
+    const getName = () => {
+      const n = $("#nm").value.trim().slice(0, 16);
+      if (!n) { fb.textContent = "Pick a name first."; $("#nm").focus(); return null; }
+      saveName(n);
+      return n;
+    };
+    $("#host").onclick = () => { const n = getName(); if (n && peerReady()) hostLobby(n, fb); };
+    $("#join").onclick = () => {
+      const n = getName();
+      const c = $("#code").value.trim().toUpperCase();
+      if (!n) return;
+      if (!/^[A-Z]{4}$/.test(c)) { fb.textContent = "Codes are 4 letters."; return; }
+      if (peerReady()) joinLobby(n, c, fb);
+    };
+    $("#code").addEventListener("keydown", e => { if (e.key === "Enter") $("#join").click(); });
+    $(".back").onclick = home;
+    if (!name) $("#nm").focus(); else if (prefill) $("#join").focus();
+  }
+
+  // ----- host side -----
+  function hostLobby(name, fb, tries = 0) {
+    const code = roomCode();
+    fb.textContent = "Opening a lobby…";
+    const peer = new Peer(LOBBY_PREFIX + code, { config: ICE, debug: 0 });
+    const me = myId();
+    const S = {
+      code, phase: "lobby", r: -1, ids: [], endsAt: 0,
+      players: [{ id: me, name, score: 0, ans: {}, online: true, host: true }],
+    };
+    let opened = false;
+    L = { role: "host", peer, me, S, conns: new Map(), timer: null };
+    peer.on("open", () => { opened = true; hostBroadcast(); });
+    peer.on("error", e => {
+      if (!opened && e.type === "unavailable-id" && tries < 3) { peer.destroy(); hostLobby(name, fb, tries + 1); return; }
+      if (!opened) { fb.textContent = "Couldn't reach the matchmaking server. Check your connection and try again."; lobbyLeave(); }
+    });
+    peer.on("disconnected", () => setTimeout(() => { if (L && L.peer === peer && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 2000));
+    peer.on("connection", conn => {
+      conn.on("data", d => hostOnMsg(conn, d));
+      conn.on("close", () => {
+        const p = L && L.S.players.find(x => x.id === conn.pid);
+        if (p) { p.online = false; L.conns.delete(p.id); hostCheckRound(); hostBroadcast(); }
+      });
+    });
+  }
+
+  function hostOnMsg(conn, d) {
+    if (!L || L.role !== "host" || !d || typeof d !== "object") return;
+    const S = L.S;
+    if (d.t === "hello") {
+      const name = String(d.name || "Player").slice(0, 16);
+      let p = S.players.find(x => x.id === d.id);
+      if (!p) {
+        if (S.players.length >= LOBBY_MAX) { conn.send({ t: "full" }); setTimeout(() => conn.close(), 300); return; }
+        p = { id: String(d.id).slice(0, 12), name, score: 0, ans: {}, online: true };
+        S.players.push(p);
+      }
+      p.name = name; p.online = true;
+      conn.pid = p.id;
+      L.conns.set(p.id, conn);
+      hostBroadcast();
+    } else if (d.t === "answer" && conn.pid) {
+      hostAnswer(conn.pid, d);
+    }
+  }
+
+  function hostAnswer(pid, d) {
+    const S = L.S;
+    const p = S.players.find(x => x.id === pid);
+    if (!p || S.phase !== "round" || d.r !== S.r || p.ans[S.r]) return;
+    const prompt = PROMPTS.get(S.ids[S.r]);
+    // The host re-checks the guess, so everyone is scored by the same rules.
+    const hit = prompt && d.guess ? FathomMatch.match(prompt, String(d.guess).slice(0, 60), idx(prompt)) : -1;
+    const tier = hit >= 0 ? prompt.a[hit][1] : 0;
+    p.ans[S.r] = { guess: String(d.guess || "").slice(0, 60), hit, tier, why: d.why || "" };
+    p.score += POINTS[tier];
+    hostCheckRound();
+    hostBroadcast();
+  }
+
+  function hostStartGame() {
+    const S = L.S;
+    S.ids = practiceIds(IDS);
+    S.players = S.players.filter(p => p.online);
+    S.players.forEach(p => { p.score = 0; p.ans = {}; });
+    hostStartRound(0);
+  }
+  function hostStartRound(r) {
+    const S = L.S;
+    S.phase = "round"; S.r = r; S.endsAt = Date.now() + SECONDS * 1000 + 600;
+    clearTimeout(L.timer);
+    // Grace second for slow connections, then anyone who hasn't answered gets 0.
+    L.timer = setTimeout(() => {
+      if (!L || L.S.phase !== "round" || L.S.r !== r) return;
+      L.S.players.forEach(p => { if (!p.ans[r]) p.ans[r] = { guess: "", hit: -1, tier: 0, why: "time" }; });
+      hostCheckRound();
+      hostBroadcast();
+    }, SECONDS * 1000 + 1800);
+    hostBroadcast();
+  }
+  function hostCheckRound() {
+    const S = L.S;
+    if (S.phase !== "round") return;
+    if (S.players.filter(p => p.online).every(p => p.ans[S.r])) {
+      clearTimeout(L.timer);
+      S.phase = S.r >= ROUNDS - 1 ? "done" : "reveal";
+    }
+  }
+  function hostNext() {
+    const S = L.S;
+    if (S.phase === "reveal") hostStartRound(S.r + 1);
+    else if (S.phase === "done") { S.phase = "lobby"; S.r = -1; hostBroadcast(); }
+  }
+  function hostBroadcast() {
+    if (!L || L.role !== "host") return;
+    const S = L.S;
+    const msg = { t: "state", S: Object.assign({}, S, { left: S.phase === "round" ? S.endsAt - Date.now() : 0 }) };
+    for (const c of L.conns.values()) { try { c.open && c.send(msg); } catch (e) { /* dropped */ } }
+    lobbyRender(msg.S);
+  }
+
+  // ----- guest side -----
+  function joinLobby(name, code, fb) {
+    fb.textContent = "Connecting…";
+    const peer = new Peer({ config: ICE, debug: 0 });
+    const me = myId();
+    let joined = false;
+    L = { role: "guest", peer, me, S: null, conn: null };
+    const fail = msg => { if (!joined) { fb.textContent = msg; lobbyLeave(); } };
+    const t = setTimeout(() => fail("No answer from that lobby. Check the code, and that the host still has the page open."), 12000);
+    peer.on("error", e => fail(e.type === "peer-unavailable" ? "No lobby with that code." : "Couldn't connect. Some school or mobile networks block this; try other Wi-Fi."));
+    peer.on("open", () => {
+      const conn = peer.connect(LOBBY_PREFIX + code, { reliable: true, serialization: "json" });
+      L.conn = conn;
+      conn.on("open", () => { joined = true; clearTimeout(t); conn.send({ t: "hello", id: me, name }); });
+      conn.on("data", d => {
+        if (!L || L.conn !== conn) return;
+        if (d && d.t === "full") { joined = false; fail("That lobby is full."); return; }
+        if (d && d.t === "state") { d.S.left = Math.max(0, d.S.left); d.S.endsAtLocal = Date.now() + d.S.left; lobbyRender(d.S); }
+      });
+      conn.on("close", () => { if (L && L.conn === conn) lobbyLost(code); });
+    });
+  }
+  function lobbyLost(code) {
+    lobbyLeave();
+    screen();
+    app.innerHTML = `<section class="screen list"><h2>Lost the lobby</h2>
+      <p class="sub">The connection to the host dropped. If they still have the page open you can rejoin; your score is kept.</p>
+      <div class="actions"><button type="button" class="primary small" id="rejoin">Rejoin ${esc(code)}</button>
+      <button type="button" class="ghost small" id="back">Home</button></div></section>`;
+    $("#rejoin").onclick = () => friends(code);
+    $("#back").onclick = home;
+  }
+  function lobbySend(msg) {
+    if (!L) return;
+    if (L.role === "host") hostAnswer(L.me, msg);
+    else if (L.conn && L.conn.open) L.conn.send(msg);
+  }
+
+  // ----- views (shared by host and guests) -----
+  function standings(S) {
+    return S.players.slice().sort((a, b) => b.score - a.score);
+  }
+  function lobbyRender(S) {
+    if (!L) return;
+    L.S = L.role === "host" ? L.S : S;
+    const prev = L.view;
+    const key = S.phase + ":" + S.r;
+    L.view = key;
+    if (prev === key && (S.phase === "round" || S.phase === "lobby")) return lobbyUpdate(S); // live bits only
+    if (S.phase === "lobby") return lobbyRoom(S);
+    if (S.phase === "round") return lobbyRound(S);
+    return lobbyReveal(S);
+  }
+
+  function playerRows(S, mode) {
+    const r = S.r;
+    return standings(S).map((p, k) => {
+      const a = p.ans[r];
+      const status = mode === "round" ? (a ? `<span class="st ok">answered</span>` : `<span class="st">thinking…</span>`) : "";
+      return `<li class="${p.id === L.me ? "me" : ""} ${p.online ? "" : "off"}">
+        <span class="rk">${k + 1}</span><span class="nm">${esc(p.name)}${p.host ? ` <em>host</em>` : ""}${p.online ? "" : ` <em>left</em>`}</span>
+        ${status}<span class="sc">${p.score}</span></li>`;
+    }).join("");
+  }
+
+  function lobbyRoom(S) {
+    screen();
+    setDepth(0);
+    leaveGuard = () => { lobbyLeave(); return false; };
+    const host = L.role === "host";
+    app.innerHTML = `
+      <section class="screen list lobby">
+        <h2>Lobby</h2>
+        <div class="room-code"><span class="lbl">Code</span><b>${esc(S.code)}</b>
+          <button type="button" class="small" id="copy-link">Copy invite link</button></div>
+        <p class="sub">${host ? "Send friends the code or the link, then start when everyone's in." : "Waiting for the host to start…"}</p>
+        <ol class="players" id="lb-players">${playerRows(S, "lobby")}</ol>
+        ${host ? `<button type="button" class="primary" id="start">Start the dive</button>` : ""}
+        <button type="button" class="ghost back">← Leave lobby</button>
+      </section>`;
+    $("#copy-link").onclick = () => copy(inviteLink(S.code), $("#copy-link"), "Copy invite link");
+    if (host) $("#start").onclick = () => hostStartGame();
+    $(".back").onclick = () => { lobbyLeave(); friends(); };
+  }
+
+  function lobbyUpdate(S) {
+    const list = $("#lb-players");
+    if (list) list.innerHTML = playerRows(S, S.phase === "round" ? "round" : "lobby");
+  }
+
+  function lobbyRound(S) {
+    screen();
+    const r = S.r;
+    const p = PROMPTS.get(S.ids[r]);
+    const mine = S.players.find(x => x.id === L.me);
+    setDepth(mine ? mine.score : 0);
+    leaveGuard = () => { lobbyLeave(); return false; };
+    if (!p) { app.innerHTML = `<section class="screen list"><p class="warn">This prompt isn't in your copy of the game. Reload to get the latest version.</p></section>`; return; }
+    const already = mine && mine.ans[r];
+    app.innerHTML = `
+      <section class="screen round lobby-round">
+        <div class="round-top">
+          <span class="pill">Lobby ${esc(S.code)}</span>
+          <span class="pill">${r + 1} / ${ROUNDS}</span>
+          <span class="pill muted">${esc(p.packTitle)}</span>
+        </div>
+        <h2 class="prompt">${esc(p.q)}</h2>
+        <form class="answer" autocomplete="off" ${already ? "hidden" : ""}>
+          <input id="guess" type="text" autocapitalize="off" autocorrect="off" spellcheck="false"
+            placeholder="type one answer" aria-label="Your answer" maxlength="60" enterkeyhint="go">
+          <button type="submit" class="primary small">Dive</button>
+        </form>
+        <div class="clock"><div class="clock-fill" id="clock-fill"></div><span id="clock-n">${SECONDS}</span></div>
+        <p class="feedback" id="feedback">${already ? "Locked in. Waiting for the others…" : ""}</p>
+        <div class="tried" id="tried"></div>
+        <ol class="players compact" id="lb-players">${playerRows(S, "round")}</ol>
+      </section>`;
+    fx.words($(".round .prompt"));
+    const input = $("#guess");
+    const fb = $("#feedback");
+    const tried = [];
+    let sent = !!already;
+    const lock = (guess, why) => {
+      if (sent) return;
+      sent = true;
+      lobbySend({ t: "answer", r, guess, why });
+      $(".answer").hidden = true;
+      fb.innerHTML = guess ? `<span class="ok">Locked in "${esc(guess)}". Waiting for the others…</span>` : "Out of time. Waiting for the others…";
+    };
+    if (!already) {
+      input.focus();
+      $(".answer").onsubmit = e => {
+        e.preventDefault();
+        const g = input.value.trim();
+        if (!g) return;
+        if (FathomMatch.match(p, g, idx(p)) < 0) {
+          tried.push(g);
+          fb.textContent = `"${g}" isn't on the list. Try another.`;
+          $("#tried").innerHTML = tried.map(t => `<span class="chip">${esc(t)}</span>`).join("");
+          input.value = "";
+          input.classList.remove("shake"); void input.offsetWidth; input.classList.add("shake");
+          return;
+        }
+        lock(g, "");
+      };
+    }
+    const deadline = L.role === "host" ? S.endsAt : S.endsAtLocal;
+    const clockFill = $("#clock-fill"), clockN = $("#clock-n"), clock = $(".clock"), promptEl = $(".round .prompt");
+    let raf;
+    const tick = () => {
+      const left = Math.max(0, Math.min(SECONDS, (deadline - Date.now()) / 1000));
+      clockFill.style.transform = `scaleX(${left / SECONDS})`;
+      clockN.textContent = Math.ceil(left);
+      clock.classList.toggle("low", left <= 5);
+      promptEl.classList.toggle("tense", left <= 5 && !sent);
+      if (left <= 0) return lock("", "time");
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    cleanups.push(() => cancelAnimationFrame(raf));
+  }
+
+  function lobbyReveal(S) {
+    screen();
+    const r = S.r;
+    const p = PROMPTS.get(S.ids[r]);
+    const done = S.phase === "done";
+    const host = L.role === "host";
+    const mine = S.players.find(x => x.id === L.me);
+    const myAns = mine && mine.ans[r];
+    setDepth(mine ? mine.score : 0);
+    leaveGuard = () => { lobbyLeave(); return false; };
+    const rows = S.players.slice().sort((a, b) => ((b.ans[r] || {}).tier || 0) - ((a.ans[r] || {}).tier || 0)).map(pl => {
+      const a = pl.ans[r] || { hit: -1, tier: 0 };
+      const label = a.hit >= 0 && p ? p.a[a.hit][0] : a.why === "time" || !a.guess ? "no answer" : a.guess;
+      return `<li class="t${a.tier} ${pl.id === L.me ? "me" : ""}"><span class="nm">${esc(pl.name)}</span>
+        <span class="an">${esc(label)}</span><span class="tr">${a.tier ? TIER[a.tier] : ""}</span><span class="pt">+${POINTS[a.tier]}</span></li>`;
+    }).join("");
+    const board = standings(S);
+    const medal = k => ["gold", "silver", "bronze"][k] || "";
+    app.innerHTML = `
+      <section class="screen reveal lobby-reveal">
+        <div class="round-top"><span class="pill">Lobby ${esc(S.code)}</span><span class="pill">${r + 1} / ${ROUNDS}</span></div>
+        ${p ? `<h2 class="prompt small">${esc(p.q)}</h2>` : ""}
+        <ol class="answers-round">${rows}</ol>
+        ${p ? `<dl class="lists"><dt>Everyone says</dt><dd>${p.a.filter(e => e[1] === 1).map(e => `<span class="chip t1">${esc(e[0])}</span>`).join("")}</dd></dl>` : ""}
+        <h3>${done ? "Final standings" : "Standings"}</h3>
+        <ol class="players ${done ? "final" : ""}">${board.map((pl, k) => `<li class="${pl.id === L.me ? "me" : ""} ${done ? medal(k) : ""}">
+          <span class="rk">${k + 1}</span><span class="nm">${esc(pl.name)}</span>
+          <span class="sq-row">${Array.from({ length: r + 1 }, (_, i) => `<i class="sq t${(pl.ans[i] || {}).tier || 0}"></i>`).join("")}</span>
+          <span class="sc">${pl.score}</span></li>`).join("")}</ol>
+        ${host ? `<button type="button" class="primary" id="next">${done ? "Back to the lobby" : "Next prompt ▼"}</button>`
+               : `<p class="sub center">${done ? "Waiting for the host to start another round…" : "Waiting for the host to go on…"}</p>`}
+      </section>`;
+    if (myAns) fx.burst($(".answers-round li.me"), myAns.tier);
+    if (done && board[0]) setTimeout(() => fx.zone(board[0].name + " wins", `${board[0].score} points · ${fmtM(board[0].score * METRES_PER_POINT)}`), 500);
+    if (host) {
+      $("#next").onclick = hostNext;
+      const armT = setTimeout(() => onKey(e => { if (e.key === "Enter") { e.preventDefault(); hostNext(); } }), 300);
+      cleanups.push(() => clearTimeout(armT));
+    }
+  }
+
   // ---------- boot ----------
   if (!calm()) {
     window.addEventListener("pointermove", e => {
@@ -745,6 +1127,8 @@
   }
   buildGauge();
   bubbles();
-  $("#home-btn").onclick = () => { if (leaveGuard && leaveGuard()) return; home(); };
-  home();
+  $("#home-btn").onclick = () => { if (leaveGuard && leaveGuard()) return; lobbyLeave(); home(); };
+  const invite = new URLSearchParams(location.search).get("room");
+  if (invite && /^[A-Za-z]{4}$/.test(invite)) friends(invite.toUpperCase());
+  else home();
 })();

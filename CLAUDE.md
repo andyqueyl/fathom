@@ -12,6 +12,10 @@
 
 7 prompts, 25 s each, one daily dive per day (and one play per archive dive), 10 m per point, max 700 points = 7,000 m. Unrecognised answers don't count and can be retried while the clock runs; time running out scores 0. A daily that gets reloaded mid-round counts that round as missed, so no replays.
 
+## Friends lobby
+
+In `js/game.js` ("friends lobby" section). PeerJS 1.5.4 from cdnjs, peer id `fathom-room-<CODE>`, STUN only (no TURN). The host is the referee: it picks the prompts, runs the clock (25 s plus a grace second), re-checks every guess with `FathomMatch`, and broadcasts the full state after every change. Player ids are per tab (sessionStorage `fathom:me`), so two tabs can test it; names are in localStorage `fathom:name`. A guest who reconnects with the same id keeps their score. Max 8 players.
+
 ## Maintenance
 
 - Pack edits: follow `data/FORMAT.md`, then `node scripts/validate.cjs` must report 0 errors. After changing `js/match.js`, rerun `node scripts/false-matches.cjs` and compare the hit count (1,822 on 2026-10-16, 410 prompts).

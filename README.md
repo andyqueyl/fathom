@@ -14,6 +14,7 @@ Open `index.html` in a browser. Double-clicking it works and needs no server and
 - **Archive:** any past dive, also once each.
 - **Themed packs:** seven random prompts from one category.
 - **Unlimited:** seven random prompts from everything. Practice modes skip the next 7 days of daily prompts and show you unseen prompts first.
+- **Play with friends:** host a lobby, send the 4-letter code or invite link, and up to 8 people play the same 7 prompts at the same time. Everyone sees who has answered, then all the answers side by side, then live standings.
 - **Stats:** dives played, average, deepest, streak, recent scores, how rare your answers are, and your flagged answers. Stats live in this browser only (localStorage).
 
 During a round you can **Pass**, see the guesses that got rejected, and **flag** a rejected answer you think is right. Flags collect on the Stats page with a Copy button, so you can send them over to get added. After each round you see the common answers, some deep cuts, and the full answer list by rarity.
@@ -35,7 +36,8 @@ Typing an answer that isn't on the list doesn't cost you anything. You get "not 
 
 - **Rarity is estimated, not measured.** The real game scores you against what other players actually typed. Fathom has no players to count, so every answer carries a hand-assigned tier (written with Claude). Expect some tiers to feel wrong. Fix them in the `data/pack-*.js` files.
 - **Only answers on the list count.** Every prompt is a closed set (countries, elements, Pixar films...) with a list that's meant to be complete, but some correct answers will be missing. If one gets rejected, add it to the pack.
-- **There's no shared leaderboard and no accounts.** "Same prompts for everyone" holds because the daily schedule is computed from the date, so friends opening their own copy get the same dive. Scores aren't shared.
+- **Friends lobbies are peer to peer.** Browsers connect directly using PeerJS (its free public server only introduces them). The host's tab runs the game, so it has to stay open. Some strict networks (school, cellular, office) block direct connections. Tested with two tabs on one computer, not yet across two devices.
+- **There's no global leaderboard and no accounts.** "Same prompts for everyone" holds because the daily schedule is computed from the date, so friends opening their own copy get the same dive. Scores aren't shared.
 - **The schedule shifts when you add prompts.** Days are dealt from a seeded shuffle of all prompt ids, so adding or removing prompts changes which prompts upcoming (and past) dive numbers show.
 - With 410 prompts, the daily cycle repeats after 58 days (reshuffled). Heavy unlimited play uses up prompts before they come round in the daily.
 - **Typo matching still lets a few wrong answers through.** `node scripts/false-matches.cjs` lists every case where an answer from another prompt would typo-match (about 1,800 across 37,600 answers). Most are fair, like demonyms ("Austrian" for Austria) or spacing ("Heilong Jiang"). A few aren't, like "Indians" counting as the Indiana Pacers.
