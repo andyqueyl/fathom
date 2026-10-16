@@ -216,68 +216,179 @@
         document.body.classList.remove("quake"); void document.body.offsetWidth; document.body.classList.add("quake");
       }
     },
-    // After a correct guess: the word lifts out of the box and floats (common)
-    // or sinks (rare), trailing bubbles, before the reveal. Resolves when done
-    // or when the player clicks / presses a key to skip.
-    plunge(fromEl, word, tier, gained) {
+    // After a correct guess the camera dives: the word locks in at the centre and
+    // the ocean rushes up past you (depth ticks, landmarks, bubble streaks), the
+    // water darkens, and a counter rolls to the new depth. Click or any key skips.
+    plunge(fromEl, word, tier, gained, beforePts) {
       return new Promise(resolve => {
         if (calm() || !fromEl) return resolve();
+        const m0 = beforePts * METRES_PER_POINT, m1 = (beforePts + gained) * METRES_PER_POINT;
+        const PX = 1.15; // pixels per metre while diving
+        const dist = (m1 - m0) * PX;
+        const dur = 1300 + Math.min(1300, (m1 - m0) * 1.4);
+        const mid = innerHeight / 2;
+        // Depth ticks every 50 m from a little above to a little below the dive.
+        const from = Math.max(0, Math.floor((m0 - mid / PX) / 50) * 50), to = m1 + Math.ceil(mid / PX / 50) * 50 + 50;
+        let ticks = "";
+        for (let d = from; d <= to; d += 50) {
+          const big = d % 200 === 0;
+          ticks += `<div class="tick ${big ? "big" : ""}" style="top:${mid + (d - m0) * PX}px"><span>${big ? fmtM(d) : ""}</span></div>`;
+        }
+        const marks = MARKS.filter(([d]) => d >= from && d <= to).map(([d, n]) =>
+          `<div class="mark ${/ZONE|trench/.test(n) ? "zone" : ""}" style="top:${mid + (d - m0) * PX}px"><b>${fmtM(d)}</b>${esc(n.split(" · ")[0])}</div>`).join("");
         const ov = document.createElement("div");
         ov.className = `plunge t${tier}`;
-        ov.innerHTML = `<div class="pl-word">${esc(word)}</div><div class="pl-ring"></div>
-          <div class="pl-depth"><span>${tier <= 1 ? "floats" : "↓ 0 m"}</span></div>
-          <div class="pl-stamp">${TIER[tier]}<small>+${gained}</small></div>`;
+        // Sea life that lives in this depth range, cloned from the background art,
+        // on a far layer (slow) and a near layer (fast) for parallax.
+        const kinds = [...document.querySelectorAll("#life .creature")];
+        const fits = kinds.filter(c => +c.dataset.to > m0 && +c.dataset.from < m1 + 200);
+        const pool = fits.length ? fits : kinds;
+        const critter = (layer, k) => {
+          const c = pool[Math.floor(Math.random() * pool.length)];
+          const y = mid + Math.random() * (dist * layer + innerHeight * .6);
+          const flip = Math.random() < .5 ? -1 : 1;
+          const size = layer > 1 ? 1.4 : .7;
+          return `<div class="critter ${layer > 1 ? "near" : "far"}" style="top:${y}px;left:${5 + Math.random() * 80}%;--s:${size};--f:${flip};--sw:${(k % 2 ? 1 : -1) * (20 + Math.random() * 40)}px">${c.outerHTML}</div>`;
+        };
+        const nFar = 3 + Math.round(dist / 500), nNear = 1 + Math.round(dist / 700);
+        const far = Array.from({ length: nFar }, (_, k) => critter(.55, k)).join("");
+        const near = Array.from({ length: nNear }, (_, k) => critter(1.6, k)).join("");
+        let snow = "";
+        if (m1 > 600) for (let k = 0; k < 50; k++) snow += `<i style="left:${Math.random() * 100}%;top:${mid + Math.random() * (dist * .8 + innerHeight)}px"></i>`;
+        ov.innerHTML = `<div class="pl-rays"></div>
+          <div class="pl-layer pl-far">${far}</div>
+          <div class="pl-layer pl-snow">${snow}</div>
+          <div class="pl-column">${ticks}${marks}</div>
+          <div class="pl-layer pl-near">${near}</div>
+          <div class="pl-streaks"></div>
+          <div class="pl-reticle"><span class="pl-meter">${fmtM(m0)}</span></div>
+          <div class="pl-word">${esc(word)}</div><div class="pl-ring"></div>
+          <div class="pl-stamp"><span class="pl-letters">${[...TIER[tier]].map((c, i) => `<span style="--i:${i}">${c}</span>`).join("")}</span><small>+${gained} · ${fmtM(m1)}</small></div>`;
         document.body.appendChild(ov);
-        const w = ov.querySelector(".pl-word"), depthEl = ov.querySelector(".pl-depth span");
+        const col = ov.querySelector(".pl-column"), w = ov.querySelector(".pl-word"), meter = ov.querySelector(".pl-meter");
+        const water = m => {
+          // Same colour curve as the page background (sqrt of depth fraction).
+          const f = Math.sqrt(Math.min(1, m / MAX_DEPTH));
+          const A = [18, 102, 138], B = [1, 5, 10];
+          return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * f)).join(",")})`;
+        };
+        const lead = 380; // the word flies in first, then the dive starts
+        let cleanupStamp = () => {};
+        ov.animate([{ opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 1, offset: .9 }, { opacity: 0 }], { duration: lead + dur + 1000, fill: "forwards" });
+        ov.animate([{ backgroundColor: water(m0) }, { backgroundColor: water(m0), offset: lead / (lead + dur) }, { backgroundColor: water(m1) }],
+          { duration: lead + dur, easing: "ease-in-out", fill: "forwards" });
+        const dive = (el, factor, sway) => el.animate([
+          { transform: "translate(0, 0)" },
+          { transform: `translate(${sway}px, ${-dist * factor * .3}px)`, offset: .3 },
+          { transform: `translate(${-sway}px, ${-dist * factor * .75}px)`, offset: .66 },
+          { transform: `translate(0, ${-dist * factor * 1.04}px)`, offset: .88 },
+          { transform: `translate(0, ${-dist * factor}px)` },
+        ], { duration: dur, delay: lead, easing: "cubic-bezier(.5,0,.3,1)", fill: "forwards" });
+        dive(col, 1, 10);
+        dive(ov.querySelector(".pl-far"), .55, 4);
+        dive(ov.querySelector(".pl-snow"), .8, 6);
+        dive(ov.querySelector(".pl-near"), 1.6, 18);
+        ov.querySelector(".pl-rays").animate([{ opacity: Math.max(0, 1 - m0 / 500) }, { opacity: Math.max(0, 1 - m1 / 500) }],
+          { duration: dur, delay: lead, fill: "both" });
         const a = fromEl.getBoundingClientRect(), b = w.getBoundingClientRect();
-        // Start exactly over the input, then fly to the middle of the screen.
-        const dx = a.left + 16 - b.left, dy = a.top + a.height / 2 - (b.top + b.height / 2);
-        const sink = [0, -60, 70, 160, 240, 320][tier];       // floats up for tier 1, sinks deeper for rarer
-        const dur = [0, 1500, 1500, 1650, 1700, 1750][tier];
-        const anims = [];
-        anims.push(w.animate([
-          { transform: `translate(${dx}px, ${dy}px) scale(.55)`, opacity: .6, offset: 0 },
-          { transform: "translate(0, 0) scale(1.15)", opacity: 1, offset: .28 },
-          { transform: "translate(0, 0) scale(1)", opacity: 1, offset: .38 },
-          { transform: `translate(0, ${sink}px) scale(${tier <= 1 ? 1.05 : 1 - tier * 0.07})`, opacity: tier >= 4 ? .15 : .9, offset: .85 },
-          { transform: `translate(0, ${sink * 1.1}px) scale(${tier <= 1 ? 1.05 : .6})`, opacity: 0, offset: 1 },
-        ], { duration: dur, easing: "cubic-bezier(.45,0,.25,1)", fill: "forwards" }));
-        ov.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .85 }, { opacity: 0 }], { duration: dur + 350, fill: "forwards" });
-        // Bubbles stream off the word while it moves.
-        const bubbleT = setInterval(() => {
+        w.animate([
+          { transform: `translate(${a.left + 16 - b.left}px, ${a.top + a.height / 2 - (b.top + b.height / 2)}px) scale(.55)`, opacity: .5 },
+          { transform: "translate(0,0) scale(1.08) rotate(0deg)", opacity: 1, offset: .14 },
+          { transform: "translate(-6px,10px) scale(1) rotate(-3deg)", opacity: 1, offset: .32 },
+          { transform: "translate(6px,14px) scale(1) rotate(3deg)", opacity: 1, offset: .5 },
+          { transform: "translate(-4px,10px) scale(1) rotate(-2deg)", opacity: 1, offset: .66 },
+          { transform: "translate(0,0) scale(1.04) rotate(0deg)", opacity: 1, offset: .8 },
+          { transform: "translate(0,-10px) scale(.9)", opacity: 0 },
+        ], { duration: lead + dur + 600, easing: "ease-in-out", fill: "forwards" });
+        const pieces = [];
+        const spray = (x, y, n, spread, colors, kind) => {
+          for (let k = 0; k < n; k++) {
+            const d = document.createElement("i");
+            d.className = kind;
+            d.style.left = x + "px"; d.style.top = y + "px";
+            d.style.background = colors[k % colors.length];
+            ov.appendChild(d);
+            pieces.push(d);
+            const ang = kind === "drop" ? -Math.PI * (.1 + Math.random() * .8) : Math.random() * Math.PI * 2;
+            const v = spread * (.4 + Math.random() * .8);
+            const dx = Math.cos(ang) * v, dy = Math.sin(ang) * v;
+            d.animate([
+              { transform: "translate(-50%,-50%) rotate(0deg) scale(1)", opacity: 1 },
+              { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${Math.random() * 540}deg) scale(1)`, opacity: 1, offset: .55 },
+              { transform: `translate(calc(-50% + ${dx * 1.2}px), calc(-50% + ${dy + 160}px)) rotate(${Math.random() * 900}deg) scale(.6)`, opacity: 0 },
+            ], { duration: 900 + Math.random() * 700, easing: "cubic-bezier(.15,.7,.4,1)" }).onfinish = () => d.remove();
+          }
+        };
+        const TC = ["#8fb8c9", "#4fd1a5", "#f2d06b", "#f39a4c", "#ff5d8f"];
+        // Splash as the word hits the water.
+        const splashT = setTimeout(() => {
           const r = w.getBoundingClientRect();
-          const bub = document.createElement("i");
-          bub.className = "pl-bubble";
-          const size = 3 + Math.random() * (tier >= 4 ? 10 : 6);
-          Object.assign(bub.style, { left: r.left + Math.random() * r.width + "px", top: r.top + r.height / 2 + "px", width: size + "px", height: size + "px" });
-          ov.appendChild(bub);
-          bub.animate([{ transform: "translateY(0)", opacity: .9 }, { transform: `translate(${(Math.random() - .5) * 40}px, ${-120 - Math.random() * 160}px)`, opacity: 0 }],
-            { duration: 900 + Math.random() * 700, easing: "ease-out" }).onfinish = () => bub.remove();
-        }, tier >= 4 ? 30 : 70);
-        // Depth counter rolls for anything that sinks.
-        if (tier > 1) {
-          const t0 = performance.now() + dur * .38, total = gained * METRES_PER_POINT;
-          const roll = now => {
-            const k = Math.max(0, Math.min(1, (now - t0) / (dur * .5)));
-            depthEl.textContent = "↓ " + fmtM(Math.round(total * (1 - Math.pow(1 - k, 3))));
-            if (k < 1 && ov.isConnected) requestAnimationFrame(roll);
-          };
-          requestAnimationFrame(roll);
-        }
+          spray(r.left + r.width / 2, r.top + r.height / 2, 22 + tier * 4, 140 + tier * 30, ["rgba(210,245,255,.9)", "rgba(150,225,240,.8)"], "drop");
+          ov.querySelector(".pl-ring").animate([{ transform: "translate(-50%,-115%) scale(.3)", opacity: .8 }, { transform: "translate(-50%,-115%) scale(2.6)", opacity: 0 }],
+            { duration: 700, easing: "cubic-bezier(.1,.7,.3,1)" });
+        }, lead - 60);
+        // Arrival: camera punch and a confetti blast, bigger for rarer answers.
+        const landT = setTimeout(() => {
+          ov.animate([{ transform: "scale(1)" }, { transform: `scale(${1 + tier * .012})` }, { transform: "scale(1)" }], { duration: 380, easing: "cubic-bezier(.2,1.6,.4,1)" });
+          const cols = tier >= 5 ? TC : [TC[tier - 1], "#e8f6fa", TC[Math.min(4, tier)]];
+          spray(innerWidth / 2, innerHeight / 2, 16 + tier * 14, 180 + tier * 70, cols, "confetti");
+          if (tier >= 5) {
+            spray(innerWidth * .2, innerHeight * .65, 24, 260, TC, "confetti");
+            spray(innerWidth * .8, innerHeight * .65, 24, 260, TC, "confetti");
+          }
+        }, lead + dur * .9);
+        // A glowing wake streams up off the word.
+        const wakeT = setInterval(() => {
+          const r = w.getBoundingClientRect();
+          const g = document.createElement("i");
+          g.className = "wake";
+          Object.assign(g.style, { left: r.left + r.width * (.15 + Math.random() * .7) + "px", top: r.top + r.height * .4 + "px" });
+          ov.appendChild(g);
+          g.animate([{ transform: "translate(-50%,0) scale(1)", opacity: .8 }, { transform: `translate(-50%, ${-90 - Math.random() * 120}px) scale(.2)`, opacity: 0 }],
+            { duration: 700 + Math.random() * 500, easing: "ease-out" }).onfinish = () => g.remove();
+        }, 40);
+        // Bubble streaks rush upward while you dive; faster for deeper dives.
+        const streaks = ov.querySelector(".pl-streaks");
+        const speed = 380 + 900 / Math.max(1, tier);
+        let streakT;
+        const startStreaks = setTimeout(() => {
+          streakT = setInterval(() => {
+            const sEl = document.createElement("i");
+            const big = Math.random() < .25;
+            sEl.className = big ? "bub" : "streak";
+            const x = Math.random() * innerWidth;
+            Object.assign(sEl.style, { left: x + "px", top: innerHeight + 20 + "px" });
+            if (big) { const z = 4 + Math.random() * 10; sEl.style.width = sEl.style.height = z + "px"; }
+            streaks.appendChild(sEl);
+            sEl.animate([{ transform: "translateY(0)" }, { transform: `translateY(${-innerHeight - 120}px)` }],
+              { duration: speed * (big ? 1.6 : 1) * (.8 + Math.random() * .5), easing: "linear" }).onfinish = () => sEl.remove();
+          }, tier >= 4 ? 14 : 28);
+        }, lead);
+        const stopStreaks = setTimeout(() => clearInterval(streakT), lead + dur * .9);
+        // The counter rolls with the camera.
+        const t0 = performance.now() + lead;
+        const roll = now => {
+          if (!ov.isConnected) return;
+          const k = Math.max(0, Math.min(1, (now - t0) / dur));
+          const e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+          meter.textContent = fmtM(Math.round((m0 + (m1 - m0) * e) / 10) * 10);
+          if (k < 1) requestAnimationFrame(roll);
+        };
+        requestAnimationFrame(roll);
         if (tier >= 4) {
-          ov.querySelector(".pl-ring").animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: .9 }, { transform: "translate(-50%,-50%) scale(4)", opacity: 0 }],
-            { duration: 900, delay: dur * .45, easing: "cubic-bezier(.1,.7,.3,1)", fill: "both" });
+          ov.querySelector(".pl-ring").animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: .9 }, { transform: "translate(-50%,-50%) scale(4.5)", opacity: 0 }],
+            { duration: 900, delay: lead + dur * .92, easing: "cubic-bezier(.1,.7,.3,1)", fill: "both" });
         }
-        ov.querySelector(".pl-stamp").animate([
-          { transform: "translate(-50%,-50%) scale(2.2)", opacity: 0 },
-          { transform: "translate(-50%,-50%) scale(.95)", opacity: 1, offset: .6 },
-          { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
-        ], { duration: 450, delay: dur * .55, easing: "cubic-bezier(.2,1.4,.4,1)", fill: "both" });
+        const stamp = ov.querySelector(".pl-stamp");
+        const stampT = setTimeout(() => stamp.classList.add("go"), lead + dur * .88);
+        cleanupStamp = () => clearTimeout(stampT);
         let finished = false;
         const done = () => {
           if (finished) return;
           finished = true;
-          clearInterval(bubbleT);
+          cleanupStamp();
+          clearTimeout(startStreaks); clearTimeout(stopStreaks); clearInterval(streakT); clearInterval(wakeT);
+          clearTimeout(splashT); clearTimeout(landT);
           document.removeEventListener("keydown", skip, true);
           ov.remove();
           resolve();
@@ -286,8 +397,8 @@
         setTimeout(() => {
           document.addEventListener("keydown", skip, true);
           ov.addEventListener("pointerdown", skip);
-        }, 200);
-        setTimeout(done, dur + 350);
+        }, 250);
+        setTimeout(done, lead + dur + 1000);
       });
     },
 
@@ -622,7 +733,7 @@
       if (hit < 0) return reveal(prompts, meta, rec, tried);
       input.blur();
       $(".answer").classList.add("launched");
-      fx.plunge(input, p.a[hit][0], tier, POINTS[tier]).then(() => {
+      fx.plunge(input, p.a[hit][0], tier, POINTS[tier], rec.score - POINTS[tier]).then(() => {
         if (app.querySelector(".round") && rec.rounds.length && rec.rounds[rec.rounds.length - 1].id === p.id) reveal(prompts, meta, rec, tried);
       });
     };
@@ -1139,7 +1250,7 @@
         }
         const hit = FathomMatch.match(p, g, idx(p));
         input.blur();
-        fx.plunge(input, p.a[hit][0], p.a[hit][1], POINTS[p.a[hit][1]]);
+        fx.plunge(input, p.a[hit][0], p.a[hit][1], POINTS[p.a[hit][1]], mine ? mine.score : 0);
         lock(g, "");
       };
     }
